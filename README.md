@@ -1,5 +1,9 @@
 # sslproto37
 
+[![Build Status](https://travis-ci.org/vltr/sslproto37.svg?branch=master)](https://travis-ci.org/vltr/sslproto37)
+[![Build Status](https://ci.appveyor.com/api/projects/status/github/vltr/sslproto37?branch=master&svg=true)](https://ci.appveyor.com/project/vltr/sslproto37)
+[![Coverage Status](https://codecov.io/github/vltr/sslproto37/coverage.svg?branch=master)](https://codecov.io/github/vltr/sslproto37)
+
 This is a simple backport of the `SSLProtocol` from Python 3.7 that adds a SSL handshake timeout feature, that does not exists in Python 3.5 and Python 3.6.
 
 ## Who needs this backport
