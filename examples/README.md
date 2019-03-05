@@ -15,4 +15,4 @@ telnet 127.0.0.1 8888
 And what will happens if running `telnet` against:
 
 - `with_backport.py`: your connection will be closed after 60 seconds (unless you call the server with a different - and valid - `PYSSLPROTO37_HANDSHAKE_TIMEOUT` environment value);
-- `without_backport.py`: your connection will be left open for a very, very, very, very, very long time. Very good for exhausting your server connection limits and leave it unresponsible in a DOS attack scenario. This will not happen if you use `uvloop`, for example, since it implements SSL handshake timeout on its own.
+- `without_backport.py`: your connection will be left open for a very, very, very, very, very long time. Very good for exhausting your server's available connections and leaving it non-responsive in a DOS attack scenario. This will not happen if you use `uvloop`, for example, since it implements SSL handshake timeout on its own.
