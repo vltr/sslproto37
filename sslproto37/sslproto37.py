@@ -286,7 +286,7 @@ _loop_factory = _policy._loop_factory
 
 if issubclass(_loop_factory, BaseSelectorEventLoop):
     _socket_transport = _SelectorSocketTransport  # posix
-elif issubclass(_loop_factory, BaseProactorEventLoop):
+elif issubclass(_loop_factory, BaseProactorEventLoop):  # noqa how to test this?
     _socket_transport = _ProactorSocketTransport  # windows
 
 
@@ -297,7 +297,6 @@ def _get_ssl_handshake_timeout():
     else:
         # no try / except, simply throw the error
         _ssl_handshake_timeout = float(_ssl_handshake_timeout)
-    print("Using '{}' as SSL handshake timeout".format(_ssl_handshake_timeout))
     return _ssl_handshake_timeout
 
 
@@ -337,7 +336,7 @@ class SSLProtocolBackport(sslproto.SSLProtocol):
         )
 
     def _check_handshake_timeout(self):
-        if self._in_handshake is True:
+        if self._in_handshake is True:  # this is always be true (IMO)
             msg = (
                 "SSL handshake is taking longer than "
                 "{ssl_handshake_timeout} seconds: "

@@ -30,12 +30,15 @@ class EchoClientProtocol(asyncio.Protocol):
         transport.write(b"HELLO")
 
 
-def ssl_protocol(loop, sslcontext, waiter=None, proto=None):
+def run_in_foreground(task, loop):
+    return loop.run_until_complete(asyncio.ensure_future(task, loop=loop))
+
+
+def ssl_protocol(loop, sslcontext, waiter=None):
     """Function backported from Python 3.7.2"""
     from sslproto37 import SSLProtocolBackport
 
-    if proto is None:  # app protocol
-        proto = asyncio.Protocol()
+    proto = asyncio.Protocol()
     ssl_proto = SSLProtocolBackport(loop, proto, sslcontext, waiter,
                                     ssl_handshake_timeout=0.1)
     assert ssl_proto._app_transport.get_protocol() is proto
@@ -96,6 +99,7 @@ def test_warning_on_py37(recwarn):
 
 @skip_if_py37()
 def test_handshake_timeout_zero(client_ctx):
+    """Test backported from Python 3.7.2"""
     from sslproto37 import SSLProtocolBackport
 
     loop = asyncio.get_event_loop()
@@ -108,6 +112,7 @@ def test_handshake_timeout_zero(client_ctx):
 
 @skip_if_py37()
 def test_handshake_timeout_negative(client_ctx):
+    """Test backported from Python 3.7.2"""
     from sslproto37 import SSLProtocolBackport
 
     loop = asyncio.get_event_loop()
@@ -116,64 +121,6 @@ def test_handshake_timeout_negative(client_ctx):
     with pytest.raises(ValueError):
         SSLProtocolBackport(loop, app_proto, client_ctx, waiter,
                             ssl_handshake_timeout=-10)
-
-
-@skip_if_py37()
-def test_successful_echo_default_timeout(server_ctx, client_ctx, free_port):
-    from sslproto37 import SSLProtocolBackportLoopPolicy
-
-    asyncio.set_event_loop_policy(SSLProtocolBackportLoopPolicy())
-    loop = asyncio.get_event_loop()
-    port = free_port()
-
-    server = loop.create_server(
-        EchoServerProtocol,
-        "127.0.0.1",
-        port,
-        ssl=server_ctx
-    )
-
-    async def client():
-        await loop.create_connection(
-            EchoClientProtocol,
-            '127.0.0.1',
-            port,
-            ssl=client_ctx
-        )
-
-    asyncio.ensure_future(server, loop=loop)
-    loop.run_until_complete(asyncio.wait_for(client(), loop=loop, timeout=10))
-
-
-@skip_if_py37()
-def test_successful_echo_custom_timeout(server_ctx, client_ctx, free_port):
-
-    with env_variables(PYSSLPROTO37_HANDSHAKE_TIMEOUT="30"):
-        from sslproto37 import SSLProtocolBackportLoopPolicy
-
-        asyncio.set_event_loop_policy(SSLProtocolBackportLoopPolicy())
-        loop = asyncio.get_event_loop()
-        port = free_port()
-
-        server = loop.create_server(
-            EchoServerProtocol,
-            "127.0.0.1",
-            port,
-            ssl=server_ctx
-        )
-
-        async def client():
-            await loop.create_connection(
-                EchoClientProtocol,
-                '127.0.0.1',
-                port,
-                ssl=client_ctx
-            )
-
-        asyncio.ensure_future(server, loop=loop)
-        loop.run_until_complete(
-            asyncio.wait_for(client(), loop=loop, timeout=10)
-        )
 
 
 @skip_if_py37()
@@ -212,29 +159,149 @@ def test_eof_received_waiter(server_ctx):
 
 
 @skip_if_py37()
-def test_ssl_handshake_timeout(server_ctx, free_port):
+def test_echo_default_timeout(server_ctx, client_ctx):
+    from sslproto37 import SSLProtocolBackportLoopPolicy
+
+    asyncio.set_event_loop_policy(SSLProtocolBackportLoopPolicy())
+
+    messages = []
+    loop = asyncio.get_event_loop()
+    loop.set_debug(True)
+    loop.set_exception_handler(lambda loop, ctx: messages.append(ctx))
+
+    async def make_server(loop):
+        return await loop.create_server(
+            EchoServerProtocol,
+            "127.0.0.1",
+            port=0,
+            ssl=server_ctx
+        )
+
+    async def client(port, loop):
+        await loop.create_connection(
+            EchoClientProtocol,
+            "127.0.0.1",
+            port=port,
+            ssl=client_ctx
+        )
+
+    srv_sock = run_in_foreground(make_server(loop), loop)
+    port = srv_sock.sockets[0].getsockname()[1]
+    run_in_foreground(client(port, loop), loop)
+
+    assert len(messages) == 0
+
+
+@skip_if_py37()
+def test_echo_custom_timeout(server_ctx, client_ctx):
+
+    with env_variables(PYSSLPROTO37_HANDSHAKE_TIMEOUT="30"):
+        from sslproto37 import SSLProtocolBackportLoopPolicy
+
+        asyncio.set_event_loop_policy(SSLProtocolBackportLoopPolicy())
+
+        messages = []
+        loop = asyncio.get_event_loop()
+        loop.set_debug(True)
+        loop.set_exception_handler(lambda loop, ctx: messages.append(ctx))
+
+        async def make_server(loop):
+            return await loop.create_server(
+                EchoServerProtocol,
+                "127.0.0.1",
+                port=0,
+                ssl=server_ctx
+            )
+
+        async def client(port, loop):
+            await loop.create_connection(
+                EchoClientProtocol,
+                '127.0.0.1',
+                port,
+                ssl=client_ctx
+            )
+
+        srv_sock = run_in_foreground(make_server(loop), loop)
+        port = srv_sock.sockets[0].getsockname()[1]
+        run_in_foreground(client(port, loop), loop)
+
+        assert len(messages) == 0
+
+
+@skip_if_py37()
+def test_past_custom_timeout(server_ctx, client_ctx):
+
+    with env_variables(**{"PYSSLPROTO37_HANDSHAKE_TIMEOUT": "1"}):
+        from sslproto37 import SSLProtocolBackportLoopPolicy
+
+        class TestProtocol(asyncio.Protocol):
+            def connection_made(self, transport):
+                self.transport = transport
+
+        asyncio.set_event_loop_policy(SSLProtocolBackportLoopPolicy())
+
+        messages = []
+        loop = asyncio.get_event_loop()
+        loop.set_debug(True)
+        loop.set_exception_handler(lambda loop, ctx: messages.append(ctx))
+
+        async def make_server(loop):
+            return await loop.create_server(
+                EchoServerProtocol,
+                "127.0.0.1",
+                port=0,
+                ssl=server_ctx
+            )
+
+        async def client(port, loop):
+            proto = TestProtocol()
+            await loop.create_connection(
+                lambda: proto,
+                '127.0.0.1',
+                port,
+                ssl=client_ctx
+            )
+            await asyncio.sleep(3)
+            proto.transport.write(b"HELLO")
+
+    srv_sock = run_in_foreground(make_server(loop), loop)
+    port = srv_sock.sockets[0].getsockname()[1]
+    run_in_foreground(client(port, loop), loop)
+
+    assert len(messages) == 0
+
+
+@skip_if_py37()
+def test_ssl_handshake_timeout(server_ctx):
 
     with env_variables(PYSSLPROTO37_HANDSHAKE_TIMEOUT="3"):
         from sslproto37 import SSLProtocolBackportLoopPolicy
 
         asyncio.set_event_loop_policy(SSLProtocolBackportLoopPolicy())
-        loop = asyncio.get_event_loop()
-        port = free_port()
 
-        server = loop.create_server(
+        messages = []
+        loop = asyncio.get_event_loop()
+        loop.set_debug(True)
+        loop.set_exception_handler(lambda loop, ctx: messages.append(ctx))
+
+        make_server = asyncio.start_server(
             EchoServerProtocol,
             "127.0.0.1",
-            port,
+            port=0,
+            loop=loop,
             ssl=server_ctx
         )
 
-        async def client():
+        async def client(port, loop):
             reader, writer = await asyncio.open_connection(
                 "127.0.0.1", port, loop=loop
             )
             await asyncio.sleep(5)
 
-        asyncio.ensure_future(server, loop=loop)
-        loop.run_until_complete(
-            asyncio.wait_for(client(), loop=loop, timeout=60)
-        )
+        server = run_in_foreground(make_server, loop)
+        port = server.sockets[0].getsockname()[1]
+        run_in_foreground(client(port, loop), loop)
+
+        assert len(messages) == 1
+        assert isinstance(messages[0].get("exception"), ConnectionAbortedError)
+        assert "SSL handshake is taking longer" in messages[0].get("exception").args[0]
